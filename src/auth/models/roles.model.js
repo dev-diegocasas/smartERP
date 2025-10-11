@@ -1,4 +1,4 @@
-// models/roles.model.js
+// src/auth/models/roles.model.js
 const { sql, getPool } = require('../../config/db');
 
 async function getRoleByName(nombre_rol) {
@@ -6,6 +6,14 @@ async function getRoleByName(nombre_rol) {
   const res = await pool.request()
     .input('nombre', sql.NVarChar, nombre_rol)
     .query('SELECT * FROM Roles WHERE nombre_rol = @nombre');
+  return res.recordset[0] || null;
+}
+
+async function getRoleById(id_rol) {
+  const pool = await getPool();
+  const res = await pool.request()
+    .input('id', sql.Int, id_rol)
+    .query('SELECT * FROM Roles WHERE id_rol = @id');
   return res.recordset[0] || null;
 }
 
@@ -22,18 +30,11 @@ async function createRole(nombre_rol, descripcion = null) {
   return { id: res.recordset[0].id, nombre_rol, descripcion };
 }
 
-async function assignRoleToUser(id_usuario, id_rol) {
+async function getAllRoles() {
   const pool = await getPool();
-  await pool.request()
-    .input('id_usuario', sql.Int, id_usuario)
-    .input('id_rol', sql.Int, id_rol)
-    .query(`
-      IF NOT EXISTS (SELECT 1 FROM Usuarios_Roles WHERE id_usuario = @id_usuario AND id_rol = @id_rol)
-      BEGIN
-        INSERT INTO Usuarios_Roles (id_usuario, id_rol) VALUES (@id_usuario, @id_rol)
-      END
-    `);
-  return true;
+  const res = await pool.request()
+    .query('SELECT id_rol, nombre_rol, descripcion FROM Roles ORDER BY id_rol');
+  return res.recordset || [];
 }
 
-module.exports = { getRoleByName, createRole, assignRoleToUser };
+module.exports = { getRoleByName, getRoleById, createRole, getAllRoles };

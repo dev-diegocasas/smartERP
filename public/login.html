@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Iniciar sesión - Farmatodo ERP</title>
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+  <main class="center">
+    <div class="card">
+      <h1>Bienvenido a Farmatodo ERP</h1>
+      <p class="muted">Inicia sesión para acceder a tu cuenta</p>
+
+      <form id="loginForm">
+        <label>Tipo de usuario (UI)</label>
+        <select id="tipo_usuario">
+          <option value="1">Administrador</option>
+          <option value="2">Usuario</option>
+        </select>
+
+        <label>Correo</label>
+        <input id="email" type="email" required />
+
+        <label>Contraseña</label>
+        <input id="password" type="password" required />
+
+        <div id="error" class="error" style="display:none"></div>
+
+        <button type="submit">Iniciar Sesión</button>
+      </form>
+    </div>
+  </main>
+
+  <script src="/js/auth.js"></script>
+  <script>
+    // inicializar el formulario
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+      const tipo_usuario = document.getElementById('tipo_usuario').value;
+      const errEl = document.getElementById('error');
+
+      try {
+        errEl.style.display = 'none';
+        await window.APP_AUTH.login({ email, password, tipo_usuario });
+        // evitar volver atrás al login:
+        history.replaceState({}, '', '/dashboard.html');
+        // redirigir a dashboard
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        errEl.style.display = 'block';
+        errEl.textContent = err.message || 'Error al iniciar sesión';
+      }
+    });
+  </script>
+</body>
+</html>
