@@ -1,8 +1,9 @@
-// controllers/auth.controller.js
+// src/auth/controllers/auth.controller.js
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { getUserByEmail, createUser, getUserRole, updateUser, deleteUser, updateUserTipoUsuario, getAllUsers } = require('../models/users.model');
 const { getRoleByName, createRole, getAllRoles } = require('../models/roles.model');
+const { getPermisosByRol } = require('../models/roles_permisos.model');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
@@ -25,9 +26,10 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password, tipo_usuario } = req.body;
-    if (!email || !password || !tipo_usuario) {
-      return res.status(400).json({ message: 'Faltan datos: email, password y tipo_usuario son requeridos' });
+    // Ahora solo email + password en el body
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Faltan datos: email y password son requeridos' });
     }
 
     const user = await getUserByEmail(email);
@@ -36,32 +38,50 @@ async function login(req, res) {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ message: 'Credenciales inválidas' });
 
-    // Verificar que el usuario tenga el tipo_usuario correcto
-    if (user.tipo_usuario !== parseInt(tipo_usuario)) {
-      return res.status(401).json({ message: 'El tipo de usuario seleccionado no coincide con su cuenta' });
-    }
-
     // Verificar que el usuario esté activo
-    if (!user.activo) {
+    if (typeof user.activo !== 'undefined' && !user.activo) {
       return res.status(401).json({ message: 'Su cuenta está desactivada. Contacte al administrador' });
     }
 
-    // obtener rol (desde usuarios.tipo_usuario -> roles)
+    // obtener único rol del usuario usando la FK tipo_usuario
     const role = await getUserRole(user.id_usuario);
     const roleNames = role ? [role.nombre_rol] : [];
     const roleIds = role ? [role.id_rol] : [];
+
+    // obtener permisos a partir de roleIds (si existen)
+    let permisos = [];
+    for (const id_rol of roleIds) {
+      const permisosData = await getPermisosByRol(id_rol);
+      permisos = permisos.concat(permisosData.map(p => p.nombre_permiso));
+    }
+    // Normalizar permisos (lowercase) y eliminar duplicados
+    permisos = [...new Set((permisos || []).map(p => String(p).toLowerCase()))];
+
+    const roleNamesNormalized = (roleNames || []).map(r => String(r).toLowerCase());
 
     if (!JWT_SECRET) {
       console.error('FATAL: JWT_SECRET no configurado en .env');
       return res.status(500).json({ error: 'Configuración del servidor incompleta (JWT_SECRET).' });
     }
 
-    const tokenPayload = { id: user.id_usuario, email: user.email, roles: roleNames, roleIds };
+    const tokenPayload = { 
+      id: user.id_usuario, 
+      email: user.email, 
+      roles: roleNamesNormalized, 
+      roleIds,
+      permisos
+    };
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     return res.json({
       token,
-      user: { id: user.id_usuario, nombre: user.nombre, email: user.email, roles: roleNames }
+      user: { 
+        id: user.id_usuario, 
+        nombre: user.nombre, 
+        email: user.email, 
+        roles: roleNamesNormalized,
+        permisos
+      }
     });
   } catch (err) {
     console.error('Error en login:', err);
@@ -78,7 +98,6 @@ async function assignRole(req, res) {
     let role = await getRoleByName(nombre_rol);
     if (!role) role = await createRole(nombre_rol, descripcion);
 
-    // actualizar la columna tipo_usuario del usuario para apuntar al id_rol
     const result = await updateUserTipoUsuario(parseInt(id_usuario, 10), role.id);
     if (!result || result.rowsAffected === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -90,25 +109,21 @@ async function assignRole(req, res) {
   }
 }
 
-// actualizar usuario (PUT /api/users/:id_usuario)
 async function modifyUser(req, res) {
   try {
     const { id_usuario } = req.params;
     const id = Number(id_usuario);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'id_usuario inválido' });
 
-    // datos entrantes
     const { nombre, email, tipo_usuario, activo, password } = req.body;
     console.log('DEBUG modifyUser - id:', id, 'body:', req.body);
 
-    // si el que llama no es admin, no permitir cambiar tipo_usuario
     const roles = req.user?.roles || [];
     const isAdmin = roles.map(r => String(r).toLowerCase()).includes('admin');
     if (!isAdmin && typeof tipo_usuario !== 'undefined') {
       return res.status(403).json({ message: 'No tienes permiso para cambiar el rol del usuario' });
     }
 
-    // si envían password, la hasheamos
     let password_hash = null;
     if (password) {
       const salt = await bcrypt.genSalt(10);
@@ -127,14 +142,12 @@ async function modifyUser(req, res) {
   }
 }
 
-// eliminar usuario (DELETE /api/users/:id_usuario)
 async function removeUser(req, res) {
   try {
     const { id_usuario } = req.params;
     const id = Number(id_usuario);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'id_usuario inválido' });
 
-    // solo admin puede eliminar otros: si no es admin y no es el mismo usuario -> forbidden
     const roles = req.user?.roles || [];
     const isAdmin = roles.map(r => String(r).toLowerCase()).includes('admin');
     const requesterId = req.user?.id;
@@ -151,7 +164,6 @@ async function removeUser(req, res) {
     return res.json({ message: 'Usuario eliminado' });
   } catch (err) {
     console.error('Error en removeUser:', err);
-    // FK violation en SQL Server suele ser number/code 547
     if (err && (err.number === 547 || err.code === 'ERESTRICT' || err.code === '23503')) {
       return res.status(409).json({ error: 'No se puede eliminar usuario: existen registros relacionados.' });
     }
@@ -159,7 +171,6 @@ async function removeUser(req, res) {
   }
 }
 
-// Listar todos los usuarios (admin)
 async function listUsers(req, res) {
   try {
     const users = await getAllUsers();
@@ -170,7 +181,6 @@ async function listUsers(req, res) {
   }
 }
 
-// Obtener roles (para poblar dropdown) - público
 async function listRoles(req, res) {
   try {
     const roles = await getAllRoles();
@@ -181,5 +191,4 @@ async function listRoles(req, res) {
   }
 }
 
-
-module.exports = { register, login, assignRole, modifyUser, removeUser, listRoles, listUsers};
+module.exports = { register, login, assignRole, modifyUser, removeUser, listRoles, listUsers };

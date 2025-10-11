@@ -10,11 +10,16 @@ async function getUserByEmail(email) {
   return result.recordset[0] || null;
 }
 
-// Obtener todos los usuarios (para listar)
+// Obtener todos los usuarios (para listar) - ahora incluye nombre_rol
 async function getAllUsers() {
   const pool = await getPool();
   const res = await pool.request()
-    .query('SELECT id_usuario, nombre, email, tipo_usuario, activo FROM Usuarios ORDER BY id_usuario');
+    .query(`
+      SELECT u.id_usuario, u.nombre, u.email, u.tipo_usuario, r.nombre_rol, u.activo
+      FROM Usuarios u
+      LEFT JOIN Roles r ON u.tipo_usuario = r.id_rol
+      ORDER BY u.id_usuario
+    `);
   return res.recordset || [];
 }
 
@@ -39,7 +44,8 @@ async function createUser({ nombre, email, tipo_usuario = null, passwordHash }) 
   return { id: result.recordset[0].id, nombre, email, tipo_usuario };
 }
 
-// Obtener rol del usuario
+// Obtener el rol asociado al usuario (usa Usuarios.tipo_usuario -> Roles.id_rol)
+// Devuelve un único rol o null (no hay tabla intermedia)
 async function getUserRole(id_usuario) {
   const pool = await getPool();
   const res = await pool.request()
@@ -117,7 +123,7 @@ async function deleteUser(id_usuario) {
 module.exports = {
   getUserByEmail,
   createUser,
-  getUserRole,
+  getUserRole,        // singular, usando FK tipo_usuario
   updateUserTipoUsuario,
   updateUser,
   deleteUser,
