@@ -12,7 +12,7 @@ window.APP_AUTH = (function () {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, tipo_usuario })
       });
       if (!res.ok) {
         const body = await res.json().catch(()=>({}));
@@ -28,10 +28,39 @@ window.APP_AUTH = (function () {
     function logout() {
       setToken(null);
       setUser(null);
-      try { history.replaceState({}, '', '/login.html'); history.pushState(null, '', '/login.html'); } catch (e) {}
+      // Limpiar cualquier estado adicional
+      try { 
+        localStorage.removeItem(tokenKey);
+        localStorage.removeItem(userKey);
+        // Redirigir al login
+        window.location.href = '/login.html';
+      } catch (e) {
+        console.error('Error durante logout:', e);
+        // Fallback: redirigir de todas formas
+        window.location.href = '/login.html';
+      }
     }
   
-    function isAuthenticated() { return !!getToken(); }
+    function isAuthenticated() { 
+      const token = getToken();
+      if (!token) return false;
+      
+      try {
+        // Verificar si el token está expirado (decodificar sin verificar firma)
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < now) {
+          // Token expirado, limpiar sesión
+          logout();
+          return false;
+        }
+        return true;
+      } catch (e) {
+        // Token malformado, limpiar sesión
+        logout();
+        return false;
+      }
+    }
   
     async function fetchAuth(url, opts = {}) {
       const headers = opts.headers ? { ...opts.headers } : {};

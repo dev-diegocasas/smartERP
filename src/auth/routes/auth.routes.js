@@ -2,10 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const { register, login, assignRole, modifyUser, removeUser, listUsers, listRoles } = require('../controllers/auth.controller');
-const { authenticateJWT, authorizeRole, authorizeSelfOrAdmin } = require('../middleware/auth.middleware');
+const { authenticateJWT, authorizeRole, authorizeSelfOrAdmin, requireNoSession } = require('../middleware/auth.middleware');
 
-router.post('/register', register);
-router.post('/login', login);
+router.post('/register', requireNoSession, register);
+router.post('/login', requireNoSession, login);
 router.get('/users', authenticateJWT, authorizeRole('admin'), listUsers); // listar usuarios (admin)
 router.get('/roles', listRoles); // listar roles (público, usado por el frontend)
 

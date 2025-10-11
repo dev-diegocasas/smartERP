@@ -25,14 +25,26 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ message: 'Faltan datos' });
+    const { email, password, tipo_usuario } = req.body;
+    if (!email || !password || !tipo_usuario) {
+      return res.status(400).json({ message: 'Faltan datos: email, password y tipo_usuario son requeridos' });
+    }
 
     const user = await getUserByEmail(email);
     if (!user) return res.status(401).json({ message: 'Credenciales inválidas' });
 
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ message: 'Credenciales inválidas' });
+
+    // Verificar que el usuario tenga el tipo_usuario correcto
+    if (user.tipo_usuario !== parseInt(tipo_usuario)) {
+      return res.status(401).json({ message: 'El tipo de usuario seleccionado no coincide con su cuenta' });
+    }
+
+    // Verificar que el usuario esté activo
+    if (!user.activo) {
+      return res.status(401).json({ message: 'Su cuenta está desactivada. Contacte al administrador' });
+    }
 
     // obtener rol (desde usuarios.tipo_usuario -> roles)
     const role = await getUserRole(user.id_usuario);

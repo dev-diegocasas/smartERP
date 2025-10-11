@@ -55,4 +55,80 @@ function authorizeSelfOrAdmin(req, res, next) {
   return res.status(403).json({ message: 'No tienes permiso' });
 }
 
-module.exports = { authenticateJWT, authorizeRole, authorizeSelfOrAdmin };
+/**
+ * Middleware para verificar si el usuario ya tiene una sesión activa
+ * Si tiene sesión activa, redirige al dashboard
+ * Si no tiene sesión, permite continuar (para páginas como login)
+ */
+function checkSessionActive(req, res, next) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    // No hay token, permitir acceso a páginas públicas
+    return next();
+  }
+  
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    return next();
+  }
+  
+  const token = parts[1];
+  if (!JWT_SECRET) {
+    return next();
+  }
+  
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    // Si el token es válido, el usuario ya está autenticado
+    // Para páginas HTML, redirigir al dashboard
+    if (req.path.endsWith('.html') || req.path === '/') {
+      return res.redirect('/dashboard.html');
+    }
+    // Para APIs, devolver error indicando que ya está autenticado
+    return res.status(400).json({ 
+      message: 'Ya tienes una sesión activa. Cierra sesión primero.' 
+    });
+  } catch (err) {
+    // Token inválido o expirado, permitir continuar
+    return next();
+  }
+}
+
+/**
+ * Middleware para verificar que el usuario NO tenga sesión activa
+ * Útil para páginas como login, register, etc.
+ */
+function requireNoSession(req, res, next) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    return next();
+  }
+  
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    return next();
+  }
+  
+  const token = parts[1];
+  if (!JWT_SECRET) {
+    return next();
+  }
+  
+  try {
+    jwt.verify(token, JWT_SECRET);
+    // Token válido = sesión activa, redirigir
+    if (req.path.endsWith('.html') || req.path === '/') {
+      return res.redirect('/dashboard.html');
+    }
+    return res.status(400).json({ 
+      message: 'Ya tienes una sesión activa' 
+    });
+  } catch (err) {
+    // Token inválido, permitir continuar
+    return next();
+  }
+}
+
+module.exports = { authenticateJWT, authorizeRole, authorizeSelfOrAdmin, checkSessionActive, requireNoSession };
